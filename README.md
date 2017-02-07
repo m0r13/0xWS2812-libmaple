@@ -1,3 +1,5 @@
+*This repository is forked from [g4lvanix/0xWS2812](https://github.com/g4lvanix/0xWS2812) and ported to libmaple to run on boards that are using the Arduino STM32 core for example.*
+
 # 0xWS2812 STM32 driver for WS2812(B) RGB LEDs
 
 0xWS2812 pronounced "hex-WS2812"
