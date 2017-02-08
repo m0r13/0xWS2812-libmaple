@@ -33,20 +33,29 @@
  * load the received data into their registers */
 #define WS2812_DEADPERIOD 19
 
-
 /* WS2812 framebuffer
  * buffersize = (#LEDs / 16) * 24 */
-const int LEDS_PER_ROW = 3 * 30;
+const int LEDS_PER_ROW = 3 * 60;
 const int BUFFER_SIZE = LEDS_PER_ROW * 24;
-extern uint32_t WS2812_IO_framedata[BUFFER_SIZE];
+
+/**
+ * Frame data looks like this:
+ * - each uint16_t is a value assigned to the GPIO port,
+ *   from led strip bit stream point of view that's a single bit per strip
+ * - so there is 8*uint16_t green, then 8*uint16_t red, and then 8*uint16_t blue
+ *   for the first led, then the same for all following ones
+ * - to touch only pins that are selected by gpio mask the bits are inverted
+ *   in the frame data and bits of pins that are disabled are 0
+ */
+extern uint16_t WS2812_IO_framedata[BUFFER_SIZE];
+
+extern volatile uint8_t WS2812_TC;
+extern volatile uint8_t TIM2_overflows;
 
 extern timer_dev* WS2812_timer;
 extern dma_dev* WS2812_dma;
 extern gpio_dev* WS2812_gpio;
 extern uint32_t WS2812_gpio_mask;
-
-extern volatile uint8_t WS2812_TC;
-extern volatile uint8_t TIM2_overflows;
 
 void WS2812_init(timer_dev* timer, dma_dev* dma, gpio_dev* gpio, uint16_t gpio_mask);
 

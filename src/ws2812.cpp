@@ -23,15 +23,15 @@
 
 #include "ws2812.h"
 
-uint32_t WS2812_IO_framedata[BUFFER_SIZE];
+uint16_t WS2812_IO_framedata[BUFFER_SIZE];
+
+volatile uint8_t WS2812_TC = 1;
+volatile uint8_t TIM2_overflows = 0;
 
 timer_dev* WS2812_timer = nullptr;
 dma_dev* WS2812_dma = nullptr;
 gpio_dev* WS2812_gpio = nullptr;
 uint32_t WS2812_gpio_mask = 0xffff;
-
-volatile uint8_t WS2812_TC = 1;
-volatile uint8_t TIM2_overflows = 0;
 
 void GPIO_init(void)
 {
@@ -264,22 +264,28 @@ void WS2812_sendbuf(uint32_t buffersize)
 	DMA_SetCurrDataCounter(DMA1_Channel7, buffersize);
 	*/
 
-	dma_xfer_size periph_size = DMA_SIZE_32BITS;
-	dma_xfer_size memory_size = DMA_SIZE_32BITS;
+	dma_xfer_size periph_size = DMA_SIZE_16BITS;
+	dma_xfer_size memory_size = DMA_SIZE_16BITS;
 	uint32_t mode = DMA_FROM_MEM | DMA_TRNS_CMPLT;
 
+	// set all enabled GPIO pins high
 	dma_setup_transfer(
 		WS2812_dma, DMA_CH2,
 		(__io void*) &WS2812_gpio->regs->BSRR, periph_size,
 		(__io void*) &WS2812_gpio_mask, memory_size,
 		mode);
 
+	// set all enabled GPIO pins low that have a zero in the stream
+	// we write to GPIO reset register:
+	// - stream low pins are 1 in framedata -> those pins are reset
+	// - pins that aren't enabled are 0 in framedata -> those pins aren't touched
 	dma_setup_transfer(
 		WS2812_dma, DMA_CH5,
-		(__io void*) &WS2812_gpio->regs->BSRR, periph_size,
+		(__io void*) &WS2812_gpio->regs->BRR, periph_size,
 		(__io void*) WS2812_IO_framedata, memory_size,
 		mode | DMA_MINC_MODE);
 
+	// set all enabled GPIO pins low
 	dma_setup_transfer(
 		WS2812_dma, DMA_CH7,
 		(__io void*) &WS2812_gpio->regs->BRR, periph_size,
@@ -343,6 +349,11 @@ void WS2812_init(timer_dev* timer, dma_dev* dma, gpio_dev* gpio, uint16_t gpio_m
 	WS2812_dma = dma;
 	WS2812_gpio = gpio;
 	WS2812_gpio_mask = gpio_mask;
+	// set all pins disabled by gpio mask to zero
+	// why? see where dma_setup_request is called
+	for (int i = 0; i < BUFFER_SIZE; i++) {
+		WS2812_IO_framedata[i] = gpio_mask;
+	}
 
 	GPIO_init();
 	TIM2_init();
@@ -431,46 +442,29 @@ void TIM2_IRQHandler(void)
  */
 void WS2812_framedata_setPixel(uint8_t row, uint16_t column, uint8_t red, uint8_t green, uint8_t blue)
 {
-	// How the framebuffer data looks like:
-	// - Each 32 bit unsigned int is a value that is written to gpio bit set reset register
-	// - BSRR: 0..15 set pins, 16..31 reset pins
-	// - Actual data in there is just 16 bit, but in lsbytes for setting pins 1
-	//     and inverted in msbytes for resetting pins to 0
-	// - When we apply the gpio mask to both 16 bit unsigned ints
-	//     then we manipulate only pins from the gpio mask
-	//		- bssr mask for us: gpio mask | (gpio mask << 16)
-	//		- set BSRR to: (framedata | (~framedata << 8)) & bssr mask
-	//		- in this case the bssr mask is done by the early-return
-	
-	// skips rows that are disabled by gpio mask
+	// skip rows that are disabled by gpio mask
 	if ((WS2812_gpio_mask & (1 << row)) == 0) {
 		return;
 	}
+
+	// invert bits in framedata
+	// why? see where dma_setup_request is called
+	red = ~red;
+	green = ~green;
+	blue = ~blue;
 	
 	uint8_t i;
 	for (i = 0; i < 8; i++)
 	{
 		// clear the data for pixel
-		// lsbyte to set pins
 		WS2812_IO_framedata[((column*24)+i)] &= ~(0x01<<row);
 		WS2812_IO_framedata[((column*24)+8+i)] &= ~(0x01<<row);
 		WS2812_IO_framedata[((column*24)+16+i)] &= ~(0x01<<row);
 
-		// msbytes to reset pins
-		WS2812_IO_framedata[((column*24)+i)] &= ~((0x01 << row) << 16);
-		WS2812_IO_framedata[((column*24)+8+i)] &= ~((0x01 << row) << 16);
-		WS2812_IO_framedata[((column*24)+16+i)] &= ~((0x01 << row) << 16);
-
 		// write new data for pixel
-		// lsbyte to set pins
 		WS2812_IO_framedata[((column*24)+i)] |= ((((green<<i) & 0x80)>>7)<<row);
 		WS2812_IO_framedata[((column*24)+8+i)] |= ((((red<<i) & 0x80)>>7)<<row);
 		WS2812_IO_framedata[((column*24)+16+i)] |= ((((blue<<i) & 0x80)>>7)<<row);
-
-		// msbytes to reset pins
-		WS2812_IO_framedata[((column*24)+i)] |= (((((~green<<i) & 0x80)>>7)<<row) << 16);
-		WS2812_IO_framedata[((column*24)+8+i)] |= ((((~(red<<i) & 0x80)>>7)<<row) << 16);
-		WS2812_IO_framedata[((column*24)+16+i)] |= (((((~blue<<i) & 0x80)>>7)<<row) << 16);
 	}
 }
 
