@@ -43,10 +43,10 @@ uint8_t colors[12][3] =
 };
 
 void setup()
-{	
+{
 	delay(5000);
 
-	WS2812_init(TIMER2, DMA1, GPIOA);
+	WS2812_init(TIMER2, DMA1, GPIOA, 0xffff);
 }
 
 void setAll(int r, int g, int b) {

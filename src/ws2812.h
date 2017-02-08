@@ -43,11 +43,12 @@ extern uint16_t WS2812_IO_framedata[BUFFER_SIZE];
 extern timer_dev* WS2812_timer;
 extern dma_dev* WS2812_dma;
 extern gpio_dev* WS2812_gpio;
+extern uint16_t WS2812_gpio_mask;
 
 extern volatile uint8_t WS2812_TC;
 extern volatile uint8_t TIM2_overflows;
 
-void WS2812_init(timer_dev* timer, dma_dev* dma, gpio_dev* gpio);
+void WS2812_init(timer_dev* timer, dma_dev* dma, gpio_dev* gpio, uint16_t gpio_mask);
 
 /* Transmit the frambuffer with buffersize number of bytes to the LEDs 
  * buffersize = (#LEDs / 16) * 24 */

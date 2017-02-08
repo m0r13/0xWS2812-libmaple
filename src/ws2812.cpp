@@ -28,12 +28,10 @@ uint16_t WS2812_IO_framedata[BUFFER_SIZE];
 timer_dev* WS2812_timer = nullptr;
 dma_dev* WS2812_dma = nullptr;
 gpio_dev* WS2812_gpio = nullptr;
+uint16_t WS2812_gpio_mask = 0xffff;
 
 volatile uint8_t WS2812_TC = 1;
 volatile uint8_t TIM2_overflows = 0;
-
-uint16_t WS2812_IO_High = 0xFFFF;
-uint16_t WS2812_IO_Low = 0x0000;
 
 void GPIO_init(void)
 {
@@ -180,8 +178,6 @@ void DMA_init(void)
 	*/
 
 	dma_init(WS2812_dma);
-	dma_set_per_addr(WS2812_dma, DMA_CH2, (volatile void*) &WS2812_gpio->regs->ODR);
-	dma_set_mem_addr(WS2812_dma, DMA_CH2, (volatile void*) WS2812_IO_High);
 	dma_set_priority(WS2812_dma, DMA_CH2, DMA_PRIORITY_VERY_HIGH);
 	
 	// TIM2 CC1 event
@@ -202,8 +198,6 @@ void DMA_init(void)
 	DMA_Init(DMA1_Channel5, &DMA_InitStructure);
 	*/
 
-	dma_set_per_addr(WS2812_dma, DMA_CH5, (volatile void*) &WS2812_gpio->regs->ODR);
-	dma_set_mem_addr(WS2812_dma, DMA_CH5, (volatile void*) WS2812_IO_framedata);
 	dma_set_priority(WS2812_dma, DMA_CH5, DMA_PRIORITY_VERY_HIGH);
 
 	// TIM2 CC2 event
@@ -224,8 +218,6 @@ void DMA_init(void)
 	DMA_Init(DMA1_Channel7, &DMA_InitStructure);
 	*/
 
-	dma_set_per_addr(WS2812_dma, DMA_CH7, (volatile void*) &WS2812_gpio->regs->ODR);
-	dma_set_mem_addr(WS2812_dma, DMA_CH7, (volatile void*) WS2812_IO_Low);
 	dma_set_priority(WS2812_dma, DMA_CH7, DMA_PRIORITY_VERY_HIGH);
 
 	/* configure DMA1 Channel7 interrupt */
@@ -245,7 +237,7 @@ void DMA_init(void)
 	WS2812_dma->regs->CCR7 |= DMA_CCR_TCIE;
 }
 
-void WS2812_init(timer_dev* timer, dma_dev* dma, gpio_dev* gpio) {
+void WS2812_init(timer_dev* timer, dma_dev* dma, gpio_dev* gpio, uint16_t gpio_mask) {
 	ASSERT(timer != NULL);
 	ASSERT(dma != NULL);
 	ASSERT(gpio != NULL);
@@ -253,6 +245,7 @@ void WS2812_init(timer_dev* timer, dma_dev* dma, gpio_dev* gpio) {
 	WS2812_timer = timer;
 	WS2812_dma = dma;
 	WS2812_gpio = gpio;
+	WS2812_gpio_mask = gpio_mask;
 
 	GPIO_init();
 	TIM2_init();
@@ -284,19 +277,32 @@ void WS2812_sendbuf(uint32_t buffersize)
 	DMA_SetCurrDataCounter(DMA1_Channel7, buffersize);
 	*/
 
-	__io void* periph_address = (__io void*) &WS2812_gpio->regs->ODR;
 	dma_xfer_size periph_size = DMA_SIZE_32BITS;
 	dma_xfer_size memory_size = DMA_SIZE_16BITS;
 	uint32_t mode = DMA_FROM_MEM | DMA_TRNS_CMPLT;
 
-	__io void* memory_address = (__io void*) &WS2812_IO_High;
-	dma_setup_transfer(WS2812_dma, DMA_CH2, periph_address, periph_size, memory_address, memory_size, mode);
+	dma_setup_transfer(
+		WS2812_dma, DMA_CH2,
+		(__io void*) &WS2812_gpio->regs->BSRR, periph_size,
+		(__io void*) &WS2812_gpio_mask, memory_size,
+		mode);
 
-	memory_address = (__io void*) WS2812_IO_framedata;
-	dma_setup_transfer(WS2812_dma, DMA_CH5, periph_address, periph_size, memory_address, memory_size, mode | DMA_MINC_MODE);
+	// TODO write only to bits that are used!!
+	// BSRR: 0..15 set pins, 16..31 reset pins
+	// overall mask for BSRR for us: mask | (mask << 16)
+	// set BSRR to: (framedata | (~framedata << 8)) & overall mask ?
+	// that is a change of the framebuffer!!
+	dma_setup_transfer(
+		WS2812_dma, DMA_CH5,
+		(__io void*) &WS2812_gpio->regs->ODR, periph_size,
+		(__io void*) WS2812_IO_framedata, memory_size,
+		mode | DMA_MINC_MODE);
 
-	memory_address = (__io void*) &WS2812_IO_Low;
-	dma_setup_transfer(WS2812_dma, DMA_CH7, periph_address, periph_size, memory_address, memory_size, mode);
+	dma_setup_transfer(
+		WS2812_dma, DMA_CH7,
+		(__io void*) &WS2812_gpio->regs->BRR, periph_size,
+		(__io void*) &WS2812_gpio_mask, memory_size,
+		mode);
 
 	dma_set_num_transfers(WS2812_dma, DMA_CH2, buffersize);
 	dma_set_num_transfers(WS2812_dma, DMA_CH5, buffersize);
@@ -428,6 +434,11 @@ void TIM2_IRQHandler(void)
  */
 void WS2812_framedata_setPixel(uint8_t row, uint16_t column, uint8_t red, uint8_t green, uint8_t blue)
 {
+	// skips rows that are disabled by gpio mask
+	if ((WS2812_gpio_mask & (1 << row)) == 0) {
+		return;
+	}
+
 	uint8_t i;
 	for (i = 0; i < 8; i++)
 	{
