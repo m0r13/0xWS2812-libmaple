@@ -23,7 +23,7 @@
 
 #include "ws2812.h"
 
-uint16_t WS2812_IO_framedata[BUFFER_SIZE];
+WS2812_IO_framedata_type WS2812_IO_framedata[BUFFER_SIZE];
 
 volatile uint8_t WS2812_TC = 1;
 volatile uint8_t TIM2_overflows = 0;
@@ -264,8 +264,16 @@ void WS2812_sendbuf(uint32_t buffersize)
 	DMA_SetCurrDataCounter(DMA1_Channel7, buffersize);
 	*/
 
+#if LEDS_GPIO_BYTES == 1
+	dma_xfer_size periph_size = DMA_SIZE_8BITS;
+	dma_xfer_size memory_size = DMA_SIZE_8BITS;
+#elif LEDS_GPIO_BYTES == 2
 	dma_xfer_size periph_size = DMA_SIZE_16BITS;
 	dma_xfer_size memory_size = DMA_SIZE_16BITS;
+#else
+#  pragma error Invalid LEDS_GPIO_BYTES.
+#endif
+
 	uint32_t mode = DMA_FROM_MEM | DMA_TRNS_CMPLT;
 
 	// set all enabled GPIO pins high
@@ -348,7 +356,11 @@ void WS2812_init(timer_dev* timer, dma_dev* dma, gpio_dev* gpio, uint16_t gpio_m
 	WS2812_timer = timer;
 	WS2812_dma = dma;
 	WS2812_gpio = gpio;
+#if LEDS_GPIO_BYTES == 1
+	WS2812_gpio_mask = gpio_mask & 0xff;
+#else
 	WS2812_gpio_mask = gpio_mask;
+#endif
 	// set all pins disabled by gpio mask to zero
 	// why? see where dma_setup_request is called
 	for (int i = 0; i < BUFFER_SIZE; i++) {

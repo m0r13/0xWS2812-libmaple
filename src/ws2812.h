@@ -35,19 +35,35 @@
 
 /* WS2812 framebuffer
  * buffersize = (#LEDs / 16) * 24 */
-const int LEDS_PER_ROW = 3 * 60;
+const int LEDS_PER_ROW = 5 * 60;
 const int BUFFER_SIZE = LEDS_PER_ROW * 24;
 
 /**
+ * Width of GPIO port that we want to control:
+ * - can be one or two bytes, one byte needs fewer framedata ram
+ * - use one byte if you want to address <= 8 led strips
+ */
+#define LEDS_GPIO_BYTES 1
+
+#if LEDS_GPIO_BYTES == 1
+typedef uint8_t WS2812_IO_framedata_type;
+#elif LEDS_GPIO_BYTES == 2
+typedef uint16_t WS2812_IO_framedata_type;
+#else
+#  pragma error Invalid LEDS_GPIO_BYTES.
+#endif
+
+/**
  * Frame data looks like this:
- * - each uint16_t is a value assigned to the GPIO port,
+ * - one can choose from uint8_t / uint16_t GPIO port width
+ * - each uint8/16_t is a value assigned to the GPIO port,
  *   from led strip bit stream point of view that's a single bit per strip
- * - so there is 8*uint16_t green, then 8*uint16_t red, and then 8*uint16_t blue
+ * - so there is 8*uint8/16_t green, then 8*uint8/16_t red, and then 8*uint8/16_t blue
  *   for the first led, then the same for all following ones
  * - to touch only pins that are selected by gpio mask the bits are inverted
  *   in the frame data and bits of pins that are disabled are 0
  */
-extern uint16_t WS2812_IO_framedata[BUFFER_SIZE];
+extern WS2812_IO_framedata_type WS2812_IO_framedata[BUFFER_SIZE];
 
 extern volatile uint8_t WS2812_TC;
 extern volatile uint8_t TIM2_overflows;
