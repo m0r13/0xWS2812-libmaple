@@ -36,14 +36,14 @@
 
 /* WS2812 framebuffer
  * buffersize = (#LEDs / 16) * 24 */
-const int LEDS_PER_ROW = 5 * 30;
+const int LEDS_PER_ROW = 3 * 30;
 const int BUFFER_SIZE = LEDS_PER_ROW * 24;
-extern uint16_t WS2812_IO_framedata[BUFFER_SIZE];
+extern uint32_t WS2812_IO_framedata[BUFFER_SIZE];
 
 extern timer_dev* WS2812_timer;
 extern dma_dev* WS2812_dma;
 extern gpio_dev* WS2812_gpio;
-extern uint16_t WS2812_gpio_mask;
+extern uint32_t WS2812_gpio_mask;
 
 extern volatile uint8_t WS2812_TC;
 extern volatile uint8_t TIM2_overflows;

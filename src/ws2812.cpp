@@ -23,12 +23,12 @@
 
 #include "ws2812.h"
 
-uint16_t WS2812_IO_framedata[BUFFER_SIZE];
+uint32_t WS2812_IO_framedata[BUFFER_SIZE];
 
 timer_dev* WS2812_timer = nullptr;
 dma_dev* WS2812_dma = nullptr;
 gpio_dev* WS2812_gpio = nullptr;
-uint16_t WS2812_gpio_mask = 0xffff;
+uint32_t WS2812_gpio_mask = 0xffff;
 
 volatile uint8_t WS2812_TC = 1;
 volatile uint8_t TIM2_overflows = 0;
@@ -48,13 +48,15 @@ void GPIO_init(void)
 	GPIO_Init(GPIOA, &GPIO_InitStructure);
 	*/
 
+	// pin should be enabled with clk
+	// no need to reset gpio dev and disturb other pins
 	rcc_clk_enable(WS2812_gpio->clk_id);
 
-	gpio_init(WS2812_gpio);
-	// TODO pin
-//	gpio_set_mode(WS2812_gpio, 0, GPIO_OUTPUT_PP);
 	for (int i = 0; i < 16; i++) {
-		gpio_set_mode(WS2812_gpio, i, GPIO_OUTPUT_PP);
+		// set only pins we want to use
+		if (WS2812_gpio_mask & (1 << i)) {
+			gpio_set_mode(WS2812_gpio, i, GPIO_OUTPUT_PP);
+		}
 	}
 }
 
@@ -237,21 +239,6 @@ void DMA_init(void)
 	WS2812_dma->regs->CCR7 |= DMA_CCR_TCIE;
 }
 
-void WS2812_init(timer_dev* timer, dma_dev* dma, gpio_dev* gpio, uint16_t gpio_mask) {
-	ASSERT(timer != NULL);
-	ASSERT(dma != NULL);
-	ASSERT(gpio != NULL);
-
-	WS2812_timer = timer;
-	WS2812_dma = dma;
-	WS2812_gpio = gpio;
-	WS2812_gpio_mask = gpio_mask;
-
-	GPIO_init();
-	TIM2_init();
-	DMA_init();
-}
-
 /* Transmit the frambuffer with buffersize number of bytes to the LEDs 
  * buffersize = (#LEDs / 16) * 24 */
 void WS2812_sendbuf(uint32_t buffersize)
@@ -278,7 +265,7 @@ void WS2812_sendbuf(uint32_t buffersize)
 	*/
 
 	dma_xfer_size periph_size = DMA_SIZE_32BITS;
-	dma_xfer_size memory_size = DMA_SIZE_16BITS;
+	dma_xfer_size memory_size = DMA_SIZE_32BITS;
 	uint32_t mode = DMA_FROM_MEM | DMA_TRNS_CMPLT;
 
 	dma_setup_transfer(
@@ -287,14 +274,9 @@ void WS2812_sendbuf(uint32_t buffersize)
 		(__io void*) &WS2812_gpio_mask, memory_size,
 		mode);
 
-	// TODO write only to bits that are used!!
-	// BSRR: 0..15 set pins, 16..31 reset pins
-	// overall mask for BSRR for us: mask | (mask << 16)
-	// set BSRR to: (framedata | (~framedata << 8)) & overall mask ?
-	// that is a change of the framebuffer!!
 	dma_setup_transfer(
 		WS2812_dma, DMA_CH5,
-		(__io void*) &WS2812_gpio->regs->ODR, periph_size,
+		(__io void*) &WS2812_gpio->regs->BSRR, periph_size,
 		(__io void*) WS2812_IO_framedata, memory_size,
 		mode | DMA_MINC_MODE);
 
@@ -350,6 +332,21 @@ void WS2812_sendbuf(uint32_t buffersize)
 	*/
 
 	timer_resume(WS2812_timer);
+}
+
+void WS2812_init(timer_dev* timer, dma_dev* dma, gpio_dev* gpio, uint16_t gpio_mask) {
+	ASSERT(timer != NULL);
+	ASSERT(dma != NULL);
+	ASSERT(gpio != NULL);
+
+	WS2812_timer = timer;
+	WS2812_dma = dma;
+	WS2812_gpio = gpio;
+	WS2812_gpio_mask = gpio_mask;
+
+	GPIO_init();
+	TIM2_init();
+	DMA_init();
 }
 
 /* DMA1 Channel7 Interrupt Handler gets executed once the complete framebuffer has been transmitted to the LEDs */
@@ -434,22 +431,46 @@ void TIM2_IRQHandler(void)
  */
 void WS2812_framedata_setPixel(uint8_t row, uint16_t column, uint8_t red, uint8_t green, uint8_t blue)
 {
+	// How the framebuffer data looks like:
+	// - Each 32 bit unsigned int is a value that is written to gpio bit set reset register
+	// - BSRR: 0..15 set pins, 16..31 reset pins
+	// - Actual data in there is just 16 bit, but in lsbytes for setting pins 1
+	//     and inverted in msbytes for resetting pins to 0
+	// - When we apply the gpio mask to both 16 bit unsigned ints
+	//     then we manipulate only pins from the gpio mask
+	//		- bssr mask for us: gpio mask | (gpio mask << 16)
+	//		- set BSRR to: (framedata | (~framedata << 8)) & bssr mask
+	//		- in this case the bssr mask is done by the early-return
+	
 	// skips rows that are disabled by gpio mask
 	if ((WS2812_gpio_mask & (1 << row)) == 0) {
 		return;
 	}
-
+	
 	uint8_t i;
 	for (i = 0; i < 8; i++)
 	{
-		// clear the data for pixel 
+		// clear the data for pixel
+		// lsbyte to set pins
 		WS2812_IO_framedata[((column*24)+i)] &= ~(0x01<<row);
 		WS2812_IO_framedata[((column*24)+8+i)] &= ~(0x01<<row);
 		WS2812_IO_framedata[((column*24)+16+i)] &= ~(0x01<<row);
+
+		// msbytes to reset pins
+		WS2812_IO_framedata[((column*24)+i)] &= ~((0x01 << row) << 16);
+		WS2812_IO_framedata[((column*24)+8+i)] &= ~((0x01 << row) << 16);
+		WS2812_IO_framedata[((column*24)+16+i)] &= ~((0x01 << row) << 16);
+
 		// write new data for pixel
+		// lsbyte to set pins
 		WS2812_IO_framedata[((column*24)+i)] |= ((((green<<i) & 0x80)>>7)<<row);
 		WS2812_IO_framedata[((column*24)+8+i)] |= ((((red<<i) & 0x80)>>7)<<row);
 		WS2812_IO_framedata[((column*24)+16+i)] |= ((((blue<<i) & 0x80)>>7)<<row);
+
+		// msbytes to reset pins
+		WS2812_IO_framedata[((column*24)+i)] |= (((((~green<<i) & 0x80)>>7)<<row) << 16);
+		WS2812_IO_framedata[((column*24)+8+i)] |= ((((~(red<<i) & 0x80)>>7)<<row) << 16);
+		WS2812_IO_framedata[((column*24)+16+i)] |= (((((~blue<<i) & 0x80)>>7)<<row) << 16);
 	}
 }
 
