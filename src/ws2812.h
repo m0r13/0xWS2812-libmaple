@@ -40,14 +40,14 @@ const int LEDS_PER_ROW = 5 * 30;
 const int BUFFER_SIZE = LEDS_PER_ROW * 24;
 extern uint16_t WS2812_IO_framedata[BUFFER_SIZE];
 
+extern timer_dev* WS2812_timer;
+extern dma_dev* WS2812_dma;
+extern gpio_dev* WS2812_gpio;
+
 extern volatile uint8_t WS2812_TC;
 extern volatile uint8_t TIM2_overflows;
 
-void GPIO_init(void);
-void TIM2_init(void);
-void DMA_init(void);
-
-void WS2812_init(void);
+void WS2812_init(timer_dev* timer, dma_dev* dma, gpio_dev* gpio);
 
 /* Transmit the frambuffer with buffersize number of bytes to the LEDs 
  * buffersize = (#LEDs / 16) * 24 */

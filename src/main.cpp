@@ -46,13 +46,7 @@ void setup()
 {	
 	delay(5000);
 
-	Serial.println("GPIO init...");
-	GPIO_init();
-	Serial.println("DMA init...");
-	DMA_init();
-	Serial.println("TIM2 init...");
-	TIM2_init();
-	Serial.println("Done init...");
+	WS2812_init(TIMER2, DMA1, GPIOA);
 }
 
 void setAll(int r, int g, int b) {
@@ -101,7 +95,7 @@ void loop() {
 			// send the framebuffer out to the LEDs
 			WS2812_sendbuf(BUFFER_SIZE);
 			// wait some amount of time
-			delay(10);
+			delay(500);
 			//Delay(500000L);
 		}
 	}

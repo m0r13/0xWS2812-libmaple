@@ -25,6 +25,10 @@
 
 uint16_t WS2812_IO_framedata[BUFFER_SIZE];
 
+timer_dev* WS2812_timer = nullptr;
+dma_dev* WS2812_dma = nullptr;
+gpio_dev* WS2812_gpio = nullptr;
+
 volatile uint8_t WS2812_TC = 1;
 volatile uint8_t TIM2_overflows = 0;
 
@@ -33,6 +37,8 @@ uint16_t WS2812_IO_Low = 0x0000;
 
 void GPIO_init(void)
 {
+	ASSERT(WS2812_gpio != NULL);
+
 	/*
 	GPIO_InitTypeDef GPIO_InitStructure;
 	// GPIOA Periph clock enable
@@ -44,13 +50,13 @@ void GPIO_init(void)
 	GPIO_Init(GPIOA, &GPIO_InitStructure);
 	*/
 
-	rcc_clk_enable(RCC_GPIOA);
+	rcc_clk_enable(WS2812_gpio->clk_id);
 
-	gpio_init(GPIOA);
+	gpio_init(WS2812_gpio);
 	// TODO pin
-//	gpio_set_mode(GPIOA, 0, GPIO_OUTPUT_PP);
+//	gpio_set_mode(WS2812_gpio, 0, GPIO_OUTPUT_PP);
 	for (int i = 0; i < 16; i++) {
-		gpio_set_mode(GPIOA, i, GPIO_OUTPUT_PP);
+		gpio_set_mode(WS2812_gpio, i, GPIO_OUTPUT_PP);
 	}
 }
 
@@ -58,20 +64,20 @@ void TIM2_IRQHandler(void);
 
 void TIM2_init(void)
 {
+	ASSERT(WS2812_timer != NULL);
+
 	/*
 	TIM_TimeBaseInitTypeDef TIM_TimeBaseStructure;
 	TIM_OCInitTypeDef TIM_OCInitStructure;
 	NVIC_InitTypeDef NVIC_InitStructure;
 	*/
 
-	timer_dev* timer = TIMER2;
-	
 	uint16_t PrescalerValue;
 	
 	// TIM2 Periph clock enable
 	// RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM2, ENABLE);
-	
-	rcc_clk_enable(RCC_TIMER2);
+
+	rcc_clk_enable(WS2812_timer->clk_id);
 
 	uint64_t SystemCoreClock = 72000000;
 	PrescalerValue = (uint16_t) (SystemCoreClock / 24000000) - 1;
@@ -89,14 +95,14 @@ void TIM2_init(void)
 	// autoreload = period
 	// pulse = compare
 
-	timer_init(timer);
-	timer_set_prescaler(timer, PrescalerValue);
+	timer_init(WS2812_timer);
+	timer_set_prescaler(WS2812_timer, PrescalerValue);
 	// set clock division
-	timer->regs.gen->CR1 &= ~TIMER_CR1_CKD;
-	timer->regs.gen->CR1 |= TIMER_CR1_CKD_1TCKINT;
-	timer_set_reload(timer, 29);
+	WS2812_timer->regs.gen->CR1 &= ~TIMER_CR1_CKD;
+	WS2812_timer->regs.gen->CR1 |= TIMER_CR1_CKD_1TCKINT;
+	timer_set_reload(WS2812_timer, 29);
 
-	timer_attach_interrupt(TIMER2, TIMER_UPDATE_INTERRUPT, TIM2_IRQHandler);
+	timer_attach_interrupt(WS2812_timer, TIMER_UPDATE_INTERRUPT, TIM2_IRQHandler);
 	// let's suppose counter mode is up by default
 
 	/* Timing Mode configuration: Channel 1 */
@@ -108,9 +114,9 @@ void TIM2_init(void)
 	TIM_OC1PreloadConfig(TIM2, TIM_OCPreload_Disable);	
 	*/
 
-	timer_set_mode(timer, TIMER_CH1, TIMER_OUTPUT_COMPARE);
-	timer_oc_set_mode(timer, TIMER_CH1, TIMER_OC_MODE_FROZEN, 0);
-	timer_set_compare(timer, TIMER_CH1, 8);
+	timer_set_mode(WS2812_timer, TIMER_CH1, TIMER_OUTPUT_COMPARE);
+	timer_oc_set_mode(WS2812_timer, TIMER_CH1, TIMER_OC_MODE_FROZEN, 0);
+	timer_set_compare(WS2812_timer, TIMER_CH1, 8);
 
 
 	/* Timing Mode configuration: Channel 2 */
@@ -122,9 +128,9 @@ void TIM2_init(void)
 	TIM_OC2PreloadConfig(TIM2, TIM_OCPreload_Disable);
 	*/
 
-	timer_set_mode(timer, TIMER_CH2, TIMER_OUTPUT_COMPARE);
-	timer_oc_set_mode(timer, TIMER_CH2, TIMER_OC_MODE_PWM_1, 0);
-	timer_set_compare(timer, TIMER_CH2, 17);
+	timer_set_mode(WS2812_timer, TIMER_CH2, TIMER_OUTPUT_COMPARE);
+	timer_oc_set_mode(WS2812_timer, TIMER_CH2, TIMER_OC_MODE_PWM_1, 0);
+	timer_set_compare(WS2812_timer, TIMER_CH2, 17);
 	
 	/* configure TIM2 interrupt */
 	/*
@@ -135,7 +141,7 @@ void TIM2_init(void)
 	NVIC_Init(&NVIC_InitStructure);
 	*/
 
-	timer_enable_irq(timer, TIMER_UPDATE_INTERRUPT);
+	timer_enable_irq(WS2812_timer, TIMER_UPDATE_INTERRUPT);
 	// TODO priority?
 }
 
@@ -143,6 +149,9 @@ void DMA1_Channel7_IRQHandler(void);
 
 void DMA_init(void)
 {
+	ASSERT(WS2812_dma != NULL);
+	ASSERT(WS2812_gpio != NULL);
+
 	/*
 	DMA_InitTypeDef DMA_InitStructure;
 	NVIC_InitTypeDef NVIC_InitStructure;
@@ -150,7 +159,7 @@ void DMA_init(void)
 	
 	//RCC_AHBPeriphClockCmd(RCC_AHBPeriph_DMA1, ENABLE);
 	
-	rcc_clk_enable(RCC_DMA1);
+	rcc_clk_enable(WS2812_dma->clk_id);
 	
 	// TIM2 Update event
 	/* DMA1 Channel2 configuration ----------------------------------------------*/
@@ -170,11 +179,10 @@ void DMA_init(void)
 	DMA_Init(DMA1_Channel2, &DMA_InitStructure);
 	*/
 
-	dma_dev* mdma = DMA1;
-	dma_init(mdma);
-	dma_set_per_addr(mdma, DMA_CH2, (volatile void*) &GPIOA->regs->ODR);
-	dma_set_mem_addr(mdma, DMA_CH2, (volatile void*) WS2812_IO_High);
-	dma_set_priority(mdma, DMA_CH2, DMA_PRIORITY_VERY_HIGH);
+	dma_init(WS2812_dma);
+	dma_set_per_addr(WS2812_dma, DMA_CH2, (volatile void*) &WS2812_gpio->regs->ODR);
+	dma_set_mem_addr(WS2812_dma, DMA_CH2, (volatile void*) WS2812_IO_High);
+	dma_set_priority(WS2812_dma, DMA_CH2, DMA_PRIORITY_VERY_HIGH);
 	
 	// TIM2 CC1 event
 	/* DMA1 Channel5 configuration ----------------------------------------------*/
@@ -194,9 +202,9 @@ void DMA_init(void)
 	DMA_Init(DMA1_Channel5, &DMA_InitStructure);
 	*/
 
-	dma_set_per_addr(mdma, DMA_CH5, (volatile void*) &GPIOA->regs->ODR);
-	dma_set_mem_addr(mdma, DMA_CH5, (volatile void*) WS2812_IO_framedata);
-	dma_set_priority(mdma, DMA_CH5, DMA_PRIORITY_VERY_HIGH);
+	dma_set_per_addr(WS2812_dma, DMA_CH5, (volatile void*) &WS2812_gpio->regs->ODR);
+	dma_set_mem_addr(WS2812_dma, DMA_CH5, (volatile void*) WS2812_IO_framedata);
+	dma_set_priority(WS2812_dma, DMA_CH5, DMA_PRIORITY_VERY_HIGH);
 
 	// TIM2 CC2 event
 	/* DMA1 Channel7 configuration ----------------------------------------------*/
@@ -216,9 +224,9 @@ void DMA_init(void)
 	DMA_Init(DMA1_Channel7, &DMA_InitStructure);
 	*/
 
-	dma_set_per_addr(mdma, DMA_CH7, (volatile void*) &GPIOA->regs->ODR);
-	dma_set_mem_addr(mdma, DMA_CH7, (volatile void*) WS2812_IO_Low);
-	dma_set_priority(mdma, DMA_CH7, DMA_PRIORITY_VERY_HIGH);
+	dma_set_per_addr(WS2812_dma, DMA_CH7, (volatile void*) &WS2812_gpio->regs->ODR);
+	dma_set_mem_addr(WS2812_dma, DMA_CH7, (volatile void*) WS2812_IO_Low);
+	dma_set_priority(WS2812_dma, DMA_CH7, DMA_PRIORITY_VERY_HIGH);
 
 	/* configure DMA1 Channel7 interrupt */
 	/*
@@ -229,15 +237,23 @@ void DMA_init(void)
 	NVIC_Init(&NVIC_InitStructure);
 	*/
 
-	dma_attach_interrupt(mdma, DMA_CH7, DMA1_Channel7_IRQHandler);
+	dma_attach_interrupt(WS2812_dma, DMA_CH7, DMA1_Channel7_IRQHandler);
 
 	/* enable DMA1 Channel7 transfer complete interrupt */
 	//DMA_ITConfig(DMA1_Channel7, DMA_IT_TC, ENABLE);
 	
-	mdma->regs->CCR7 |= DMA_CCR_TCIE;
+	WS2812_dma->regs->CCR7 |= DMA_CCR_TCIE;
 }
 
-void WS2812_init(void) {
+void WS2812_init(timer_dev* timer, dma_dev* dma, gpio_dev* gpio) {
+	ASSERT(timer != NULL);
+	ASSERT(dma != NULL);
+	ASSERT(gpio != NULL);
+
+	WS2812_timer = timer;
+	WS2812_dma = dma;
+	WS2812_gpio = gpio;
+
 	GPIO_init();
 	TIM2_init();
 	DMA_init();
@@ -257,7 +273,7 @@ void WS2812_sendbuf(uint32_t buffersize)
 	DMA_ClearFlag(DMA1_FLAG_HT7 | DMA1_FLAG_GL7 | DMA1_FLAG_TE7);
 	*/
 
-	DMA1->regs->IFCR = DMA_ISR_TCIF2 | DMA_ISR_HTIF2 | DMA_ISR_GIF2 | DMA_ISR_TEIF2
+	WS2812_dma->regs->IFCR = DMA_ISR_TCIF2 | DMA_ISR_HTIF2 | DMA_ISR_GIF2 | DMA_ISR_TEIF2
 						| DMA_ISR_TCIF5 | DMA_ISR_HTIF5 | DMA_ISR_GIF5 | DMA_ISR_TEIF5
 						| DMA_ISR_HTIF7 | DMA_ISR_GIF7 | DMA_ISR_TEIF7;
 	
@@ -268,30 +284,30 @@ void WS2812_sendbuf(uint32_t buffersize)
 	DMA_SetCurrDataCounter(DMA1_Channel7, buffersize);
 	*/
 
-	__io void* periph_address = (__io void*) &GPIOA->regs->ODR;
+	__io void* periph_address = (__io void*) &WS2812_gpio->regs->ODR;
 	dma_xfer_size periph_size = DMA_SIZE_32BITS;
 	dma_xfer_size memory_size = DMA_SIZE_16BITS;
 	uint32_t mode = DMA_FROM_MEM | DMA_TRNS_CMPLT;
 
 	__io void* memory_address = (__io void*) &WS2812_IO_High;
-	dma_setup_transfer(DMA1, DMA_CH2, periph_address, periph_size, memory_address, memory_size, mode);
+	dma_setup_transfer(WS2812_dma, DMA_CH2, periph_address, periph_size, memory_address, memory_size, mode);
 
 	memory_address = (__io void*) WS2812_IO_framedata;
-	dma_setup_transfer(DMA1, DMA_CH5, periph_address, periph_size, memory_address, memory_size, mode | DMA_MINC_MODE);
+	dma_setup_transfer(WS2812_dma, DMA_CH5, periph_address, periph_size, memory_address, memory_size, mode | DMA_MINC_MODE);
 
 	memory_address = (__io void*) &WS2812_IO_Low;
-	dma_setup_transfer(DMA1, DMA_CH7, periph_address, periph_size, memory_address, memory_size, mode);
+	dma_setup_transfer(WS2812_dma, DMA_CH7, periph_address, periph_size, memory_address, memory_size, mode);
 
-	dma_set_num_transfers(DMA1, DMA_CH2, buffersize);
-	dma_set_num_transfers(DMA1, DMA_CH5, buffersize);
-	dma_set_num_transfers(DMA1, DMA_CH7, buffersize);
+	dma_set_num_transfers(WS2812_dma, DMA_CH2, buffersize);
+	dma_set_num_transfers(WS2812_dma, DMA_CH5, buffersize);
+	dma_set_num_transfers(WS2812_dma, DMA_CH7, buffersize);
 	
 	// clear all TIM2 flags
 	/*
 	TIM2->SR = 0;
 	*/
 
-	TIMER2->regs.gen->SR = 0;
+	WS2812_timer->regs.gen->SR = 0;
 	
 	// enable the corresponding DMA channels
 	/*
@@ -300,9 +316,9 @@ void WS2812_sendbuf(uint32_t buffersize)
 	DMA_Cmd(DMA1_Channel7, ENABLE);
 	*/
 
-	dma_enable(DMA1, DMA_CH2);
-	dma_enable(DMA1, DMA_CH5);
-	dma_enable(DMA1, DMA_CH7);
+	dma_enable(WS2812_dma, DMA_CH2);
+	dma_enable(WS2812_dma, DMA_CH5);
+	dma_enable(WS2812_dma, DMA_CH7);
 
 	
 	// IMPORTANT: enable the TIM2 DMA requests AFTER enabling the DMA channels!
@@ -312,29 +328,29 @@ void WS2812_sendbuf(uint32_t buffersize)
 	TIM_DMACmd(TIM2, TIM_DMA_Update, ENABLE);
 	*/
 	
-	TIMER2->regs.gen->DIER &= ~(TIMER_DIER_CC1DE | TIMER_DIER_CC2DE | TIMER_DIER_UDE);
-	TIMER2->regs.gen->DIER |= TIMER_DIER_CC1DE | TIMER_DIER_CC2DE | TIMER_DIER_UDE;
+	WS2812_timer->regs.gen->DIER &= ~(TIMER_DIER_CC1DE | TIMER_DIER_CC2DE | TIMER_DIER_UDE);
+	WS2812_timer->regs.gen->DIER |= TIMER_DIER_CC1DE | TIMER_DIER_CC2DE | TIMER_DIER_UDE;
 
 	// preload counter with 29 so TIM2 generates UEV directly to start DMA transfer
 	/*
 	TIM_SetCounter(TIM2, 29);
 	*/
 
-	timer_set_count(TIMER2, 29);
+	timer_set_count(WS2812_timer, 29);
 	
 	// start TIM2
 	/*
 	TIM_Cmd(TIM2, ENABLE);
 	*/
 
-	timer_resume(TIMER2);
+	timer_resume(WS2812_timer);
 }
 
 /* DMA1 Channel7 Interrupt Handler gets executed once the complete framebuffer has been transmitted to the LEDs */
 void DMA1_Channel7_IRQHandler(void)
 {
 //	Serial.println("DMA1_Channel7_IRQHandler()");
-	dma_irq_cause cause = dma_get_irq_cause(DMA1, DMA_CH7);
+	dma_irq_cause cause = dma_get_irq_cause(WS2812_dma, DMA_CH7);
 	ASSERT(cause == DMA_TRANSFER_COMPLETE);
 	if (cause == DMA_TRANSFER_COMPLETE) {
 		/*
@@ -352,15 +368,15 @@ void DMA1_Channel7_IRQHandler(void)
 		TIM_DMACmd(TIM2, TIM_DMA_Update, DISABLE);
 		*/
 
-		DMA1->regs->ISR &= ~DMA_ISR_TCIF7;
+		WS2812_dma->regs->ISR &= ~DMA_ISR_TCIF7;
 
-		timer_enable_irq(TIMER2, TIMER_UPDATE_INTERRUPT);
+		timer_enable_irq(WS2812_timer, TIMER_UPDATE_INTERRUPT);
 		
-		dma_disable(DMA1, DMA_CH2);
-		dma_disable(DMA1, DMA_CH5);
-		dma_disable(DMA1, DMA_CH7);
+		dma_disable(WS2812_dma, DMA_CH2);
+		dma_disable(WS2812_dma, DMA_CH5);
+		dma_disable(WS2812_dma, DMA_CH7);
 		
-		TIMER2->regs.gen->DIER &= ~(TIMER_DIER_CC1DE | TIMER_DIER_CC2DE | TIMER_DIER_UDE);
+		WS2812_timer->regs.gen->DIER &= ~(TIMER_DIER_CC1DE | TIMER_DIER_CC2DE | TIMER_DIER_UDE);
 	}
 }
 
@@ -372,7 +388,7 @@ void TIM2_IRQHandler(void)
 	// Clear TIM2 Interrupt Flag
 	// TIM_ClearITPendingBit(TIM2, TIM_IT_Update);
 	
-	TIMER2->regs.gen->SR &= ~TIMER_SR_TIF;
+	WS2812_timer->regs.gen->SR &= ~TIMER_SR_TIF;
 	
 	/* check if certain number of overflows has occured yet 
 	 * this ISR is used to guarantee a 50us dead time on the data lines
@@ -390,13 +406,13 @@ void TIM2_IRQHandler(void)
 		TIM2_overflows = 0;	
 		// stop TIM2 now because dead period has been reached
 		// TIM_Cmd(TIM2, DISABLE);
-		timer_pause(TIMER2);
+		timer_pause(WS2812_timer);
 		
 		/* disable the TIM2 Update interrupt again 
 		 * so it doesn't occur while transmitting data */
 		// TIM_ITConfig(TIM2, TIM_IT_Update, DISABLE);
 		
-		timer_disable_irq(TIMER2, TIMER_UPDATE_INTERRUPT);
+		timer_disable_irq(WS2812_timer, TIMER_UPDATE_INTERRUPT);
 		
 		// finally indicate that the data frame has been transmitted
 		WS2812_TC = 1; 	
