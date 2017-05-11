@@ -7,7 +7,7 @@
 #include "ws2812.h"
 
 template <size_t stripCount, size_t stripLength, size_t stripOffset = 0>
-struct LEDMatrix {
+struct WS2812Matrix {
     static const int STRIP_COUNT = stripCount;
     static const int STRIP_LENGTH = stripLength;
     static const int STRIP_OFFSET = stripOffset;
@@ -22,9 +22,10 @@ struct LEDMatrix {
     }
 };
 
-class LEDRange {
+class WS2812Span {
 public:
     virtual void setPixel(size_t index, uint8_t r, uint8_t g, uint8_t b, bool upsideDown = false) {
+        // TODO led pin
         WS2812_framedata_setPixel(6, getIndex(index, upsideDown), r, g, b);
     }
 
@@ -33,9 +34,9 @@ public:
 };
 
 template <typename Mapping>
-class LEDRow : public LEDRange {
+class WS2812Row : public WS2812Span {
 public:
-    LEDRow(size_t row = 0)
+    WS2812Row(size_t row = 0)
         : row(row) {}
 
     virtual size_t getSize() const {
@@ -54,9 +55,9 @@ protected:
 };
 
 template <typename Mapping>
-class LEDColumn : public LEDRange {
+class WS2812Column : public WS2812Span {
 public:
-    LEDColumn(size_t column = 0)
+    WS2812Column(size_t column = 0)
         : column(column) {}
 
     virtual size_t getSize() const {
@@ -74,11 +75,11 @@ protected:
     size_t column;
 };
 
-class MultipleLEDRanges : public LEDRange {
+class MultipleWS2812Spans : public WS2812Span {
 public:
-    MultipleLEDRanges() {}
+    MultipleWS2812Spans() {}
 
-    void addRange(LEDRange* range) {
+    void addRange(WS2812Span* range) {
         ranges.add(range);
     }
 
@@ -92,12 +93,12 @@ public:
     }
 
     virtual void setPixel(size_t index, uint8_t r, uint8_t g, uint8_t b, bool upsideDown) {
-        for (LinkedListIterator<LEDRange*> it(ranges); !it.end(); it.next()) {
+        for (LinkedListIterator<WS2812Span*> it(ranges); !it.end(); it.next()) {
             (*it)->setPixel(index, r, g, b, upsideDown);
         }
     }
 
 protected:
-    LinkedList<LEDRange*> ranges;
+    LinkedList<WS2812Span*> ranges;
 };
 
