@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <cstdint>
 #include <LinkedList.h>
+#include <rassert.h>
 
 #include "ws2812.h"
 
@@ -13,10 +14,7 @@ struct WS2812Matrix {
     static const int STRIP_OFFSET = stripOffset;
 
     static inline size_t getIndex(size_t x, size_t y) {
-        // TODO assert
-        if (x >= stripCount || y > stripLength) {
-            return 0;
-        }
+        RASSERT(x < stripCount && y < stripLength);
         size_t startIndex = x * (stripLength + stripOffset);
         return startIndex + (x % 2 ? y : stripLength - y - 1);
     }
@@ -37,13 +35,16 @@ template <typename Mapping>
 class WS2812Row : public WS2812Span {
 public:
     WS2812Row(size_t row = 0)
-        : row(row) {}
+        : row(row) {
+        RASSERT(row < COUNT);
+    }
 
     virtual size_t getSize() const {
         return SIZE;
     }
 
     virtual size_t getIndex(size_t index, bool upsideDown = false) const {
+        RASSERT(index < getSize());
         return Mapping::getIndex(upsideDown ? getSize() - index - 1 : index, row);
     }
 
@@ -58,13 +59,16 @@ template <typename Mapping>
 class WS2812Column : public WS2812Span {
 public:
     WS2812Column(size_t column = 0)
-        : column(column) {}
+        : column(column) {
+        RASSERT(column < COUNT);
+    }
 
     virtual size_t getSize() const {
         return SIZE;
     }
 
     virtual size_t getIndex(size_t index, bool upsideDown = false) const {
+        RASSERT(index < getSize());
         return Mapping::getIndex(column, upsideDown ? getSize() - index - 1 : index);
     }
 
@@ -80,15 +84,17 @@ public:
     MultipleWS2812Spans() {}
 
     void addRange(WS2812Span* range) {
+        RASSERT(range != nullptr);
         ranges.add(range);
     }
 
     virtual size_t getSize() const {
-        ASSERT(ranges->hasValue());
+        RASSERT(ranges->hasValue());
         return ranges.value->getSize();
     }
 
     virtual size_t getIndex(size_t index, bool upsideDown = false) const {
+        RASSERT(false);
         return 0;
     }
 
