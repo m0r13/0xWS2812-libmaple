@@ -89,7 +89,7 @@ public:
     }
 
     virtual size_t getSize() const {
-        RASSERT(ranges->hasValue());
+        RASSERT(ranges.hasValue());
         return ranges.value->getSize();
     }
 
