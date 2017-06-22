@@ -468,6 +468,29 @@ void WS2812_framedata_setPixel(uint8_t row, uint16_t column, uint8_t red, uint8_
 	uint8_t i;
 	for (i = 0; i < 8; i++)
 	{
+		uint8_t red_bit = ((red << i) & 0x80) >> 7;
+		uint8_t green_bit = ((green << i) & 0x80) >> 7;
+		uint8_t blue_bit = ((blue << i) & 0x80) >> 7;
+
+		if (green_bit) {
+			WS2812_IO_framedata[((column*24)+i)] |= (1<<row);
+		} else {
+			WS2812_IO_framedata[((column*24)+i)] &= ~(0x01<<row);
+		}
+
+		if (red_bit) {
+			WS2812_IO_framedata[((column*24)+8+i)] |= (1<<row);
+		} else {
+			WS2812_IO_framedata[((column*24)+8+i)] &= ~(0x01<<row);
+		}
+
+		if (blue_bit) {
+			WS2812_IO_framedata[((column*24)+16+i)] |= (1<<row);
+		} else {
+			WS2812_IO_framedata[((column*24)+16+i)] &= ~(0x01<<row);
+		}
+
+		/*
 		// clear the data for pixel
 		WS2812_IO_framedata[((column*24)+i)] &= ~(0x01<<row);
 		WS2812_IO_framedata[((column*24)+8+i)] &= ~(0x01<<row);
@@ -477,6 +500,7 @@ void WS2812_framedata_setPixel(uint8_t row, uint16_t column, uint8_t red, uint8_
 		WS2812_IO_framedata[((column*24)+i)] |= ((((green<<i) & 0x80)>>7)<<row);
 		WS2812_IO_framedata[((column*24)+8+i)] |= ((((red<<i) & 0x80)>>7)<<row);
 		WS2812_IO_framedata[((column*24)+16+i)] |= ((((blue<<i) & 0x80)>>7)<<row);
+		*/
 	}
 }
 
