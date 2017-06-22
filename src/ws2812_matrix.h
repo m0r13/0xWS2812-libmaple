@@ -7,11 +7,15 @@
 
 #include "ws2812.h"
 
-template <size_t stripCount, size_t stripLength, size_t stripOffset = 0>
+template <uint8_t pinIndex, size_t stripCount, size_t stripLength, size_t stripOffset = 0>
 struct WS2812Matrix {
     static const int STRIP_COUNT = stripCount;
     static const int STRIP_LENGTH = stripLength;
     static const int STRIP_OFFSET = stripOffset;
+
+    static inline uint8_t getPinIndex(size_t x, size_t y) {
+        return pinIndex;
+    }
 
     static inline size_t getIndex(size_t x, size_t y) {
         RASSERT(x < stripCount && y < stripLength);
@@ -24,10 +28,12 @@ class WS2812Span {
 public:
     virtual void setPixel(size_t index, uint8_t r, uint8_t g, uint8_t b, bool upsideDown = false) {
         // TODO led pin
-        WS2812_framedata_setPixel(6, getIndex(index, upsideDown), r, g, b);
+        WS2812_framedata_setPixel(getPinIndex(index, upsideDown), getIndex(index, upsideDown), r, g, b);
+        WS2812_framedata_setPixel(1, getIndex(index, upsideDown), r, g, b);
     }
 
     virtual size_t getSize() const = 0;
+    virtual uint8_t getPinIndex(size_t index, bool upsideDown = false) const = 0;
     virtual size_t getIndex(size_t index, bool upsideDown = false) const = 0;
 };
 
@@ -41,6 +47,11 @@ public:
 
     virtual size_t getSize() const {
         return SIZE;
+    }
+
+    virtual uint8_t getPinIndex(size_t index, bool upsideDown = false) const {
+        RASSERT(index < getSize());
+        return Mapping::getPinIndex(upsideDown ? getSize() - index - 1 : index, row);
     }
 
     virtual size_t getIndex(size_t index, bool upsideDown = false) const {
@@ -67,6 +78,11 @@ public:
         return SIZE;
     }
 
+    virtual uint8_t getPinIndex(size_t index, bool upsideDown = false) const {
+        RASSERT(index < getSize());
+        return Mapping::getPinIndex(column, upsideDown ? getSize() - index - 1 : index);
+    }
+
     virtual size_t getIndex(size_t index, bool upsideDown = false) const {
         RASSERT(index < getSize());
         return Mapping::getIndex(column, upsideDown ? getSize() - index - 1 : index);
@@ -91,6 +107,11 @@ public:
     virtual size_t getSize() const {
         RASSERT(ranges.hasValue());
         return ranges.value->getSize();
+    }
+
+    virtual uint8_t getPinIndex(size_t index, bool upsideDown = false) const {
+        RASSERT(false);
+        return 0;
     }
 
     virtual size_t getIndex(size_t index, bool upsideDown = false) const {
