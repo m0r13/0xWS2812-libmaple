@@ -35,7 +35,11 @@
 
 /* WS2812 framebuffer
  * buffersize = (#LEDs / 16) * 24 */
-const int LEDS_PER_ROW = 5 * 60;
+#if defined(WS2812_LED_COUNT)
+const int LEDS_PER_ROW = (WS2812_LED_COUNT);
+#else
+#  pragma error No led count defined (WS2812_LED_COUNT)
+#endif
 const int BUFFER_SIZE = LEDS_PER_ROW * 24;
 
 /**

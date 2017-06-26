@@ -27,9 +27,7 @@ struct WS2812Matrix {
 class WS2812Span {
 public:
     virtual void setPixel(size_t index, uint8_t r, uint8_t g, uint8_t b, bool upsideDown = false) {
-        // TODO led pin
         WS2812_framedata_setPixel(getPinIndex(index, upsideDown), getIndex(index, upsideDown), r, g, b);
-        WS2812_framedata_setPixel(1, getIndex(index, upsideDown), r, g, b);
     }
 
     virtual size_t getSize() const = 0;
